@@ -17,8 +17,11 @@ RUN mvn clean package
 # Make the scripts in bin executable
 RUN chmod +x bin/*
 
+# Create logs directory for tick logging
+RUN mkdir -p /app/logs
+
 # Expose the port for the REST API
 EXPOSE 8009
 
 # Run the BioSim server using the start script
-CMD ["./bin/start-biosim-server", "0.0.0.0", "8009"]
+CMD ["./bin/start-biosim-server", "--host", "0.0.0.0", "--port", "8009"]

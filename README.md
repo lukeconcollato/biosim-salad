@@ -20,9 +20,35 @@ The simulation is written in Java. It uses a RESTful API for communication, enab
 ### Using the Scripts in the `bin` Directory
 The `bin` directory contains scripts to launch the simulation:
 
-- **`start-biosim-server`**: Starts the BioSim server. It accepts optional command-line arguments for host and port. By default, the server listens on host `0.0.0.0` and port `8009`.
+- **`start-biosim-server`**: Starts the BioSim server with the following options:
+  - `--host` - Bind host (default: `0.0.0.0`)
+  - `-p, --port` - Port number (default: `8009`)
+  - `-t, --writeTicks` - Enable tick logging to disk in `logs/` directory (default: `false`)
+
+  **Usage examples:**
+  ```bash
+  bin/start-biosim-server                           # Use defaults
+  bin/start-biosim-server --host 127.0.0.1 -p 9000  # Custom host and port
+  bin/start-biosim-server --writeTicks               # Enable tick logging
+  ```
 
 - **`run-simulation`**: Launches a simulation using the default configuration. Other configurations can be specified (see the `configurations` directory) with the `--config` option. Run using `--help` for more options.
+
+### Environment Variables
+You can override the default values using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BIOSIM_HOST` | Host to bind (overrides `--host`) | `0.0.0.0` |
+| `BIOSIM_PORT` | Port to bind (overrides `--port`) | `8009` |
+| `BIOSIM_WRITE_TICKS` | Enable tick logging (overrides `--writeTicks`) | `false` |
+
+**Example:**
+```bash
+export BIOSIM_PORT=9000
+export BIOSIM_WRITE_TICKS=true
+bin/start-biosim-server
+```
 
 ### Using Docker
 You can also run BioSim using Docker. The repository includes a `docker-compose.yml` configuration file. To use it, simply run:
@@ -31,6 +57,8 @@ docker compose up
 ```
 This command builds (if needed) and starts the BioSim container, with the server listening on http://localhost:8009/api/simulation
 It also starts the [Open MCT](https://github.com/nasa/openmct) [plugin for BioSim](https://github.com/scottbell/openmct-biosim/) on http://localhost:9091, allowing you to graph and view details in the simulation.
+
+**Note:** When using Docker, simulation tick logs (if enabled with `--writeTicks`) are stored in a `./logs` directory next to the `docker-compose.yml` file.
 
 <img width="1607" alt="biosim-with-openmct" src="https://github.com/user-attachments/assets/0812e361-6a93-4dd9-8006-8a2b6e21133f" />
 

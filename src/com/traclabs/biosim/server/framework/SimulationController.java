@@ -13,6 +13,12 @@ import com.traclabs.biosim.server.simulation.food.Shelf;
 import com.traclabs.biosim.server.simulation.framework.SingleFlowRateControllable;
 import com.traclabs.biosim.server.simulation.framework.Store;
 import com.traclabs.biosim.server.simulation.framework.StoreFlowRateControllable;
+import com.traclabs.biosim.server.util.tickwriter.FileTickWriter;
+import com.traclabs.biosim.server.util.tickwriter.SimIdProvider;
+import com.traclabs.biosim.server.util.tickwriter.TickWriter;
+import com.traclabs.biosim.server.util.tickwriter.TickWriterAdapter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.websocket.WsConfig;
@@ -20,18 +26,21 @@ import io.javalin.websocket.WsContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * Controller class to handle simulation REST endpoints.
  */
 public class SimulationController implements TickListener {
     private static final Logger logger = LoggerFactory.getLogger(SimulationController.class);
-    private final AtomicInteger simInitializerCounter = new AtomicInteger();
 
     // Map to store simulation IDs and their corresponding BioDriver instances
     private final Map<Integer, BioDriver> simulations = new ConcurrentHashMap<>();
@@ -39,6 +48,17 @@ public class SimulationController implements TickListener {
     // Reference to the WebSocket handler
 
     private final Map<Integer, Set<WsContext>> websocketSessions = new ConcurrentHashMap<>();
+    
+    // Flag to control tick logging
+    private boolean writeTicks = true;
+
+    /**
+     * Sets whether tick logging should be enabled.
+     * @param writeTicks true to enable tick logging, false to disable
+     */
+    public void setWriteTicks(boolean writeTicks) {
+        this.writeTicks = writeTicks;
+    }
 
     /**
      * Registers the simulation endpoints with the Javalin app.
@@ -54,6 +74,7 @@ public class SimulationController implements TickListener {
         app.post("/api/simulation/{simID}/modules/{moduleName}/consumers/{type}", this::updateConsumerDefinition);
         app.post("/api/simulation/{simID}/modules/{moduleName}/producers/{type}", this::updateProducerDefinition);
         app.get("/api/simulation/{simID}", this::getSimulationDetails);
+        app.get("/api/simulation/{simID}/log", this::getRunLog);
         app.post("/api/simulation/{simID}/modules/{moduleName}/malfunctions", this::postMalfunction);
         app.get("/api/simulation/{simID}/modules/{moduleName}/malfunctions", this::getModuleMalfunctions);
         app.delete("/api/simulation/{simID}/modules/{moduleName}/malfunctions/{malfunctionID}", this::deleteMalfunction);
@@ -156,8 +177,9 @@ public class SimulationController implements TickListener {
         }
 
         try {
-            // Generate a unique simulation ID
-            int simID = simInitializerCounter.incrementAndGet();
+            // Generate a unique simulation ID using centralized logic
+            int simID = SimIdProvider.nextId(Paths.get("logs"), writeTicks);
+            
             // Initialize the simulation using BiosimInitializer
             BiosimInitializer initializer = BiosimInitializer.getInstance(simID);
             initializer.parseXmlConfiguration(xmlConfig);
@@ -168,6 +190,19 @@ public class SimulationController implements TickListener {
 
             // Register as a tick listener
             bioDriver.addTickListener(this);
+
+            // Setup tick logging if enabled
+            if (writeTicks) {
+                TickWriter tickWriter = new FileTickWriter();
+                
+                tickWriter.open(simID);
+                
+                if (xmlConfig != null && !xmlConfig.trim().isEmpty()) {
+                    tickWriter.writeConfig(simID, xmlConfig);
+                }
+                
+                bioDriver.addTickListener(new TickWriterAdapter(tickWriter, this));
+            }
 
             // Start the simulation (without ticking)
             bioDriver.startSimulation();
@@ -261,6 +296,77 @@ public class SimulationController implements TickListener {
             context.json(simulationDetails);
         } else {
             context.status(404).json(Map.of("error", "Simulation ID not found."));
+        }
+    }
+
+    /**
+     * Returns the complete run log for a simulation including configuration, 
+     * run metadata, and all tick data.
+     *
+     * @param context the Javalin context from the request.
+     */
+    private void getRunLog(Context context) {
+        try {
+            int simID = Integer.parseInt(context.pathParam("simID"));
+            Path simDirectory = Paths.get("logs", "sim_" + simID);
+            
+            if (!Files.exists(simDirectory)) {
+                context.status(404).json(Map.of("error", "Simulation log directory not found."));
+                return;
+            }
+
+            // Read configuration XML
+            Path configFile = simDirectory.resolve("config.xml");
+            String configXML = "";
+            if (Files.exists(configFile)) {
+                configXML = Files.readString(configFile);
+            }
+
+            // Read all tick data from ticks.jsonl
+            Path ticksFile = simDirectory.resolve("ticks.jsonl");
+            List<Map<String, Object>> ticks = new ArrayList<>();
+            if (Files.exists(ticksFile)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    ticks = Files.lines(ticksFile)
+                            .map(line -> {
+                                try {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> map = objectMapper.readValue(line, Map.class);
+                                    return map;
+                                } catch (Exception e) {
+                                    logger.warn("Failed to parse tick line: {}", line, e);
+                                    return null;
+                                }
+                            })
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toList());
+                } catch (IOException e) {
+                    logger.error("Failed to read ticks file: {}", e.getMessage());
+                }
+            }
+
+            // Get directory creation time as run start time
+            String runStarted = null;
+            try {
+                runStarted = Files.getLastModifiedTime(simDirectory).toString();
+            } catch (IOException e) {
+                logger.warn("Could not get directory creation time: {}", e.getMessage());
+            }
+
+            // Build response
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("configXML", configXML);
+            response.put("runStarted", runStarted);
+            response.put("simID", simID);
+            response.put("ticks", ticks);
+
+            context.json(response);
+        } catch (NumberFormatException e) {
+            context.status(400).json(Map.of("error", "Invalid simulation ID."));
+        } catch (Exception e) {
+            logger.error("Error retrieving run log: {}", e.getMessage(), e);
+            context.status(500).json(Map.of("error", "Failed to retrieve run log: " + e.getMessage()));
         }
     }
 
