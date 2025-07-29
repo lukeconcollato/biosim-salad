@@ -24,4 +24,4 @@ RUN mkdir -p /app/logs
 EXPOSE 8009
 
 # Run the BioSim server using the start script
-CMD ["./bin/start-biosim-server", "--host", "0.0.0.0", "--port", "8009"]
+CMD ["./bin/start-biosim-server"]
