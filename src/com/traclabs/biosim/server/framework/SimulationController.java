@@ -306,6 +306,11 @@ public class SimulationController implements TickListener {
      * @param context the Javalin context from the request.
      */
     private void getRunLog(Context context) {
+        // if write ticks is false, we don't have a run log
+        if (!writeTicks) {
+            context.status(404).json(Map.of("error", "Tick logging is disabled."));
+            return;
+        }
         try {
             int simID = Integer.parseInt(context.pathParam("simID"));
             Path simDirectory = Paths.get("logs", "sim_" + simID);
