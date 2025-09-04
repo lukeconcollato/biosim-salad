@@ -43,4 +43,4 @@ for sim_id in sim_ids:
 ## 3. Close Docker
 os.system('docker compose down')
 
-## old version that needs to be updated
+## old version that needs to be updated!
