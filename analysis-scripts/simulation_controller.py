@@ -8,7 +8,7 @@ import subprocess
 ## -1. Run Docker
 #os.system('docker compose up')
 
-# Run Docker in the background
+# Run Docker in the background MAKE SURE DOCKER APP IS OPEN ON UR COMP
 subprocess.Popen(['docker', 'compose', 'up', '-d'])
 time.sleep(20)
 
@@ -16,7 +16,7 @@ time.sleep(20)
 BASE_URL = "http://localhost:8009/api"
 requests.get(f"{BASE_URL}/simulation")
 
-##0.5 running the post command
+##0.5 running the post command THIS IS WHERE THE CURRENT PROBLEM IS!
 with open('your_file.xml', 'r') as file:
     xml_data = file.read()
 pc0 = requests.post(f"{BASE_URL}/simulation/start", data=xml_data)
@@ -40,7 +40,9 @@ for sim_id in sim_ids:
     else:
         print(f"❌ Failed to fetch data for simId {sim_id} — HTTP {r.status_code}")
 
+
+
 ## 3. Close Docker
 os.system('docker compose down')
 
-## old version that needs to be updated
+## old version that needs to be updated!
